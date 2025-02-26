@@ -1,7 +1,7 @@
 
 
 
-> This repository houses the code for our senior design project as part of **Senior Electrical Engineering Projects (ECE 395)**—a two-semester course offered in Fall 2024 and Spring 2025 at The Cooper Union for the Advancement of Arts and Science.
+> This repository houses the code for our senior design project as part of **Senior Electrical Engineering Projects (ECE 395 & 396)**—a two-semester course offered in Fall 2024 and Spring 2025 at The Cooper Union for the Advancement of Arts and Science.
 
 ## Course Overview
 
