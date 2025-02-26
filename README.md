@@ -5,7 +5,7 @@
 
 ## Course Overview
 
-In Senior Electrical Engineering Projects, students work in small groups to tackle design challenges that blend research and product development. Throughout the course, you'll engage in all facets of project management—from conceptual design, scheduling, and budgeting to hardware/software implementation, testing, and performance evaluation. The course also emphasizes effective communication through both oral presentations and written reports.
+In Senior Projects, groups of students collaborate on a single design project. Throughout the course, students move from conceptual design and budgeting through to testing and performance evaluation, all while being guided by a faculty advisor.
 
 ## Instructor
 
