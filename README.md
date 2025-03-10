@@ -8,7 +8,7 @@ In Senior Projects, groups of students collaborate on a single design project. T
 
 Our project, *Low Powered Face Misclassification: Toward Ethical and Efficient On-Device Facial Recognition*, explores how quantization influences the performance and explainability of face recognition models. We are comparing Convolutional Neural Networks (CNNs) and Vision Transformer (ViT) architectures—both fine-tuned on VGGFace2—for face identification and verification tasks. By testing models at different precision levels (such as FP32, FP16, and INT8) and using explainable AI tools, we aim to reveal how quantization impacts feature extraction and overall performance on low-powered devices, such as the Jetson Nano Super.
 
-## Code Structure
+## Codebase Structure
 
 
 ## Team Members
