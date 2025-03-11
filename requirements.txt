@@ -7,3 +7,4 @@ seaborn
 wandb
 gdown
 timm
+plotly

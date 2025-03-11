@@ -14,6 +14,7 @@ from sklearn.preprocessing import normalize
 from sklearn.metrics import confusion_matrix, classification_report
 import seaborn as sns
 import wandb
+import plotly.express as px  # for interactive plotting
 
 ####################################
 # CONFIGURATION DICTIONARY
@@ -22,16 +23,16 @@ import wandb
 config = {
     "pretrained_path": "resnet18_110.pth",  # For ResNetFace. Not used for EdgeFace.
     "model_type": "edgeface",               # Options: "resnet18" or "edgeface"
-    "edgeface_variant": "edgeface_xxs",     # Only used if model_type is "edgeface"
+    "edgeface_variant": "edgeface_xxs_q",     # Quantized variant; force CPU if "q" in name
     "use_se": False,                        # Whether to use Squeeze-Excitation blocks (ResNetFace)
     "grayscale": False,                     # For EdgeFace, use color images
     "image_size": 128,                      # Input image size (width, height)
     "batch_size": 64,                       # Batch size for evaluation (if needed)
-    "data_root": "align/lfw-align-128",       # Root directory of processed images
-    "pairs_file": "lfw_test_pair.txt",        # File with image pair information
+    "data_root": "align/lfw-align-128",      # Root directory of processed images
+    "pairs_file": "lfw_test_pair.txt",       # File with image pair information
     "embedding_size": 512,                  # Expected embedding dimension from the model
     "nrof_folds": 10,                       # Number of folds for ROC evaluation
-    "threshold_range": (0, 3, 0.01),          # (start, stop, step) for threshold sweep
+    "threshold_range": (0, 3, 0.01),         # (start, stop, step) for threshold sweep
     # WandB configuration
     "wandb_api_key": "bf8d1a3f64bd6397782ed9ec70231089c9deaefa",
     "wandb_project": "LPFMC",
@@ -173,8 +174,17 @@ class FaceModelLoader:
             model.eval()
             return model
         elif self.config["model_type"] == "edgeface":
-            model = torch.hub.load(repo_or_dir='otroshi/edgeface', model=self.config["edgeface_variant"], source='github', pretrained=True)
-            model.to(self.device)
+            model = torch.hub.load(
+                repo_or_dir='otroshi/edgeface',
+                model=self.config["edgeface_variant"],
+                source='github',
+                pretrained=True
+            )
+            # Force quantized models to run on CPU
+            if "q" in self.config["edgeface_variant"]:
+                model.to("cpu")
+            else:
+                model.to(self.device)
             model.eval()
             return model
         else:
@@ -234,7 +244,11 @@ class FaceModelEvaluator:
             label = float(splits[2])
             imgA = self.img_processor.process_img(pathA).unsqueeze(0)
             imgB = self.img_processor.process_img(pathB).unsqueeze(0)
-            inputs = torch.cat([imgA, imgB], dim=0).to(self.device)
+            # If using quantized model on CPU, force inputs to CPU.
+            device_for_inputs = self.device
+            if "q" in self.config["edgeface_variant"]:
+                device_for_inputs = torch.device("cpu")
+            inputs = torch.cat([imgA, imgB], dim=0).to(device_for_inputs)
             start_time = time.time()
             with torch.no_grad():
                 output = self.model(inputs)
@@ -318,7 +332,12 @@ class FaceModelEvaluator:
         start_eval = time.time()
         embeddings, issame, avg_inference_time = self.extract_embeddings()
         total_eval_time = time.time() - start_eval
-        gpu_memory = torch.cuda.max_memory_allocated(self.device) / (1024 * 1024)
+
+        # If the device is CPU, we skip GPU memory logging
+        if self.device.type == "cuda":
+            gpu_memory = torch.cuda.max_memory_allocated(self.device) / (1024 * 1024)
+        else:
+            gpu_memory = 0.0
 
         thresholds = np.arange(*self.config["threshold_range"])
         embeddings1 = embeddings[0::2]
@@ -353,7 +372,6 @@ class FaceModelEvaluator:
             f.write(metrics_str)
         wandb.save("evaluation_metrics.txt")
 
-        # Update summary with numeric metrics
         wandb.run.summary.update({
             "accuracy_mean": mean_acc,
             "accuracy_std": std_acc,
@@ -365,8 +383,7 @@ class FaceModelEvaluator:
 
         wandb.log({"confusion_matrix_chart": wandb.Image(cm_img, caption="Confusion Matrix")})
 
-        # Log the ROC curve as an interactive plot.
-        # If tpr is 2D (from multiple folds), average it:
+        # Log the ROC curve as an interactive plot using Plotly (no extra table artifact)
         if tpr.ndim == 2:
             avg_tpr = np.mean(tpr, axis=0)
             avg_fpr = np.mean(fpr, axis=0)
@@ -374,19 +391,33 @@ class FaceModelEvaluator:
             avg_tpr = tpr
             avg_fpr = fpr
 
-        roc_data = [[float(fpr_val), float(tpr_val)] for fpr_val, tpr_val in zip(avg_fpr, avg_tpr)]
-        roc_table = wandb.Table(data=roc_data, columns=["FPR", "TPR"])
-        wandb.log({"ROC Interactive Plot": wandb.plot.line(roc_table, "FPR", "TPR", title="ROC Curve (Interactive)")})
+        fig = px.line(x=avg_fpr, y=avg_tpr, labels={'x': 'FPR', 'y': 'TPR'},
+                      title="ROC Curve (Interactive)")
+        wandb.log({"ROC Interactive Plot": fig})
+
+        # Log evaluation metrics table (only one table)
+        metrics_table = wandb.Table(columns=["Metric", "Value"])
+        metrics_table.add_data("Accuracy Mean", mean_acc)
+        metrics_table.add_data("Accuracy Std", std_acc)
+        metrics_table.add_data("Best Threshold", best_thresh)
+        metrics_table.add_data("Avg Inference Time (ms)", avg_inference_time * 1000)
+        metrics_table.add_data("Total Evaluation Time (s)", total_eval_time)
+        metrics_table.add_data("GPU Memory (MB)", gpu_memory)
+        wandb.log({"Evaluation Metrics Table": metrics_table})
 
         return mean_acc, std_acc, best_thresh
-
 
 if __name__ == "__main__":
     # Ensure every run is logged as a new run
     wandb.login(key=config["wandb_api_key"])
+    # Force device to CPU if quantized model is used.
+    if "q" in config["edgeface_variant"]:
+        device = torch.device("cpu")
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     wandb.init(project=config["wandb_project"], entity=config["wandb_entity"], config=config, reinit=True)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model_loader = FaceModelLoader(config, device)
     model = model_loader.load_model()
     evaluator = FaceModelEvaluator(model, config, device)
