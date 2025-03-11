@@ -5,3 +5,5 @@ Pillow
 scikit-learn
 seaborn
 wandb
+gdown
+timm

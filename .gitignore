@@ -1,0 +1,4 @@
+align/
+venv/
+wandb/
+lfw_test_pair.txt
