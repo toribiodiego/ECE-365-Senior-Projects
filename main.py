@@ -19,13 +19,15 @@ import plotly.express as px  # for interactive plotting
 ####################################
 # CONFIGURATION DICTIONARY
 ####################################
-# For EdgeFace, set model_type to "edgeface" and use color images (grayscale=False).
+# For testing the ResNet model via torch.hub.load, set model_type to "resnet18".
+# Note: The checkpoint "resnet18_110.pth" is for a grayscale model.
+# If you wish to use it as-is, set "grayscale": True.
 config = {
-    "pretrained_path": "resnet18_110.pth",  # For ResNetFace. Not used for EdgeFace.
-    "model_type": "edgeface",               # Options: "resnet18" or "edgeface"
-    "edgeface_variant": "edgeface_xxs_q",     # Quantized variant; force CPU if "q" in name
-    "use_se": False,                        # Whether to use Squeeze-Excitation blocks (ResNetFace)
-    "grayscale": False,                     # For EdgeFace, use color images
+    "pretrained_path": "resnet18_110.pth",  # Local path to your ResNet weights
+    "model_type": "resnet18",               # Options: "resnet18" or "edgeface"
+    "edgeface_variant": "edgeface_xxs_q",   # Not used when model_type is "resnet18"
+    "use_se": False,                        # Whether to use Squeeze-Excitation blocks (for ResNetFace)
+    "grayscale": False,                     # Use color images for ResNetFace. If set to False, the hubconf will replicate grayscale weights.
     "image_size": 128,                      # Input image size (width, height)
     "batch_size": 64,                       # Batch size for evaluation (if needed)
     "data_root": "align/lfw-align-128",      # Root directory of processed images
@@ -40,121 +42,6 @@ config = {
 }
 
 ####################################
-# 1) MODEL DEFINITION (ResNetFace)
-####################################
-def conv3x3(in_planes, out_planes, stride=1):
-    """3x3 convolution with padding"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
-                     padding=1, bias=False)
-
-class SEBlock(nn.Module):
-    """Squeeze-and-Excitation block"""
-    def __init__(self, channel, reduction=16):
-        super(SEBlock, self).__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.fc = nn.Sequential(
-            nn.Linear(channel, channel // reduction, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(channel // reduction, channel, bias=False),
-            nn.Sigmoid()
-        )
-    def forward(self, x):
-        b, c, _, _ = x.size()
-        y = self.avg_pool(x).view(b, c)
-        y = self.fc(y).view(b, c, 1, 1)
-        return x * y
-
-class IRBlock(nn.Module):
-    expansion = 1
-    def __init__(self, inplanes, planes, stride=1, downsample=None, use_se=True):
-        super(IRBlock, self).__init__()
-        self.bn0 = nn.BatchNorm2d(inplanes)
-        self.conv1 = conv3x3(inplanes, inplanes)
-        self.bn1 = nn.BatchNorm2d(inplanes)
-        self.prelu = nn.PReLU()
-        self.conv2 = conv3x3(inplanes, planes, stride)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.downsample = downsample
-        self.stride = stride
-        self.use_se = use_se
-        if self.use_se:
-            self.se = SEBlock(planes)
-    def forward(self, x):
-        residual = x
-        out = self.bn0(x)
-        out = self.conv1(out)
-        out = self.bn1(out)
-        out = self.prelu(out)
-        out = self.conv2(out)
-        out = self.bn2(out)
-        if self.use_se:
-            out = self.se(out)
-        if self.downsample is not None:
-            residual = self.downsample(x)
-        out += residual
-        out = self.prelu(out)
-        return out
-
-class ResNetFace(nn.Module):
-    def __init__(self, block, layers, use_se=True, grayscale=True):
-        super(ResNetFace, self).__init__()
-        self.inplanes = 64
-        in_ch = 1 if grayscale else 3
-        self.conv1 = nn.Conv2d(in_ch, 64, kernel_size=3, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.prelu = nn.PReLU()
-        self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.layer1 = self._make_layer(block, 64, layers[0])
-        self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
-        self.bn4 = nn.BatchNorm2d(512)
-        self.dropout = nn.Dropout()
-        self.fc5 = nn.Linear(512 * 8 * 8, config["embedding_size"])
-        self.bn5 = nn.BatchNorm1d(config["embedding_size"])
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.xavier_normal_(m.weight)
-            elif isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d)):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.xavier_normal_(m.weight)
-                nn.init.constant_(m.bias, 0)
-    def _make_layer(self, block, planes, blocks, stride=1):
-        downsample = None
-        if stride != 1 or self.inplanes != planes * block.expansion:
-            downsample = nn.Sequential(
-                nn.Conv2d(self.inplanes, planes * block.expansion,
-                          kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(planes * block.expansion),
-            )
-        layers = []
-        layers.append(block(self.inplanes, planes, stride, downsample, use_se=config["use_se"]))
-        self.inplanes = planes
-        for _ in range(1, blocks):
-            layers.append(block(self.inplanes, planes, use_se=config["use_se"]))
-        return nn.Sequential(*layers)
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.prelu(x)
-        x = self.maxpool(x)
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        x = self.bn4(x)
-        x = self.dropout(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc5(x)
-        x = self.bn5(x)
-        return {'fea': x}
-
-def resnet_face18(use_se=True, grayscale=True):
-    return ResNetFace(IRBlock, [2, 2, 2, 2], use_se=use_se, grayscale=grayscale)
-
-####################################
 # 2) MODEL LOADER CLASS
 ####################################
 class FaceModelLoader:
@@ -164,13 +51,18 @@ class FaceModelLoader:
 
     def load_model(self):
         if self.config["model_type"] == "resnet18":
-            model = resnet_face18(use_se=self.config["use_se"], grayscale=self.config["grayscale"]).to(self.device)
-            state_dict = torch.load(self.config["pretrained_path"], map_location=self.device)
-            new_state_dict = OrderedDict()
-            for k, v in state_dict.items():
-                new_key = k.replace("module.", "")
-                new_state_dict[new_key] = v
-            model.load_state_dict(new_state_dict)
+            # Load the model using our local hubconf.py entrypoint
+            model = torch.hub.load(
+                '.',                         # Local directory (i.e. your current repo)
+                'resnet18_face',            # Function name exposed in hubconf.py
+                source='local',
+                pretrained=True,            # Load local weights
+                use_se=self.config["use_se"],
+                grayscale=self.config["grayscale"],
+                embedding_size=self.config["embedding_size"],
+                weights_path=self.config["pretrained_path"]  # e.g. "resnet18_110.pth"
+            )
+            model = model.to(self.device)
             model.eval()
             return model
         elif self.config["model_type"] == "edgeface":
@@ -198,8 +90,9 @@ class ImageProcessor:
         self.config = config
 
     def process_img(self, img_path):
+        # Use color images for edgeface; for ResNetFace, use grayscale if specified.
         if self.config["model_type"] == "edgeface":
-            img = cv2.imread(img_path)  # color
+            img = cv2.imread(img_path)  # color image
         else:
             img = cv2.imread(img_path, 0) if self.config["grayscale"] else cv2.imread(img_path)
         if img is None:
@@ -244,7 +137,7 @@ class FaceModelEvaluator:
             label = float(splits[2])
             imgA = self.img_processor.process_img(pathA).unsqueeze(0)
             imgB = self.img_processor.process_img(pathB).unsqueeze(0)
-            # If using quantized model on CPU, force inputs to CPU.
+            # If using a quantized model on CPU, force inputs to CPU.
             device_for_inputs = self.device
             if "q" in self.config["edgeface_variant"]:
                 device_for_inputs = torch.device("cpu")
@@ -333,7 +226,7 @@ class FaceModelEvaluator:
         embeddings, issame, avg_inference_time = self.extract_embeddings()
         total_eval_time = time.time() - start_eval
 
-        # If the device is CPU, we skip GPU memory logging
+        # If the device is CPU, we skip GPU memory logging.
         if self.device.type == "cuda":
             gpu_memory = torch.cuda.max_memory_allocated(self.device) / (1024 * 1024)
         else:
@@ -354,7 +247,7 @@ class FaceModelEvaluator:
         print(f"Total evaluation time: {total_eval_time:.2f} s")
         print(f"Max GPU memory allocated: {gpu_memory:.2f} MB")
 
-        # Generate confusion matrix image
+        # Generate confusion matrix image.
         cm_buf = self.plot_confusion_matrix(confusion_matrix(
             np.array(issame, dtype=bool),
             np.sum(np.square(embeddings1 - embeddings2), axis=1) < best_thresh))
@@ -383,7 +276,7 @@ class FaceModelEvaluator:
 
         wandb.log({"confusion_matrix_chart": wandb.Image(cm_img, caption="Confusion Matrix")})
 
-        # Log the ROC curve as an interactive plot using Plotly (no extra table artifact)
+        # Log the ROC curve as an interactive Plotly plot.
         if tpr.ndim == 2:
             avg_tpr = np.mean(tpr, axis=0)
             avg_fpr = np.mean(fpr, axis=0)
@@ -395,7 +288,7 @@ class FaceModelEvaluator:
                       title="ROC Curve (Interactive)")
         wandb.log({"ROC Interactive Plot": fig})
 
-        # Log evaluation metrics table (only one table)
+        # Log evaluation metrics table.
         metrics_table = wandb.Table(columns=["Metric", "Value"])
         metrics_table.add_data("Accuracy Mean", mean_acc)
         metrics_table.add_data("Accuracy Std", std_acc)
@@ -408,9 +301,9 @@ class FaceModelEvaluator:
         return mean_acc, std_acc, best_thresh
 
 if __name__ == "__main__":
-    # Ensure every run is logged as a new run
+    # Log in to Weights & Biases.
     wandb.login(key=config["wandb_api_key"])
-    # Force device to CPU if quantized model is used.
+    # If using a quantized model for EdgeFace, force CPU; otherwise, use available device.
     if "q" in config["edgeface_variant"]:
         device = torch.device("cpu")
     else:

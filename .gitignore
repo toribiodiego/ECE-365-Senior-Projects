@@ -3,3 +3,4 @@ venv/
 wandb/
 lfw_test_pair.txt
 evaluation_metrics.txt
+.DS_Store
