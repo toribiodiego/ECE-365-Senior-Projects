@@ -19,19 +19,16 @@ import plotly.express as px  # for interactive plotting
 ####################################
 # CONFIGURATION DICTIONARY
 ####################################
-# For testing the ResNet model via torch.hub.load, set model_type to "resnet18".
-# Note: The checkpoint "resnet18_110.pth" is for a grayscale model.
-# If you wish to use it as-is, set "grayscale": True.
 config = {
     "pretrained_path": "resnet18_110.pth",  # Local path to your ResNet weights
     "model_type": "resnet18",               # Options: "resnet18" or "edgeface"
     "edgeface_variant": "edgeface_xxs_q",   # Not used when model_type is "resnet18"
     "use_se": False,                        # Whether to use Squeeze-Excitation blocks (for ResNetFace)
-    "grayscale": False,                     # Use color images for ResNetFace. If set to False, the hubconf will replicate grayscale weights.
+    "grayscale": False,                     # Use color images for ResNetFace. If False, the hubconf will replicate grayscale weights.
     "image_size": 128,                      # Input image size (width, height)
     "batch_size": 64,                       # Batch size for evaluation (if needed)
-    "data_root": "align/lfw-align-128",      # Root directory of processed images
-    "pairs_file": "lfw_test_pair.txt",       # File with image pair information
+    "data_root": "align/lfw-align-128",     # Root directory of processed images
+    "pairs_file": "lfw_test_pair.txt",      # File with image pair information
     "embedding_size": 512,                  # Expected embedding dimension from the model
     "nrof_folds": 10,                       # Number of folds for ROC evaluation
     "threshold_range": (0, 3, 0.01),         # (start, stop, step) for threshold sweep
@@ -51,7 +48,6 @@ class FaceModelLoader:
 
     def load_model(self):
         if self.config["model_type"] == "resnet18":
-            # Load the model using our local hubconf.py entrypoint
             model = torch.hub.load(
                 '.',                         # Local directory (i.e. your current repo)
                 'resnet18_face',            # Function name exposed in hubconf.py
@@ -60,7 +56,7 @@ class FaceModelLoader:
                 use_se=self.config["use_se"],
                 grayscale=self.config["grayscale"],
                 embedding_size=self.config["embedding_size"],
-                weights_path=self.config["pretrained_path"]  # e.g. "resnet18_110.pth"
+                weights_path=self.config["pretrained_path"]
             )
             model = model.to(self.device)
             model.eval()
@@ -72,7 +68,6 @@ class FaceModelLoader:
                 source='github',
                 pretrained=True
             )
-            # Force quantized models to run on CPU
             if "q" in self.config["edgeface_variant"]:
                 model.to("cpu")
             else:
@@ -90,7 +85,6 @@ class ImageProcessor:
         self.config = config
 
     def process_img(self, img_path):
-        # Use color images for edgeface; for ResNetFace, use grayscale if specified.
         if self.config["model_type"] == "edgeface":
             img = cv2.imread(img_path)  # color image
         else:
@@ -125,7 +119,7 @@ class FaceModelEvaluator:
         embeddings = np.zeros([2 * N, self.embedding_size], dtype=np.float32)
         issame = []
         idx = 0
-        inference_times = []  # store inference time per image pair
+        inference_times = []
         for line in lines:
             line = line.strip()
             splits = line.split()
@@ -137,7 +131,6 @@ class FaceModelEvaluator:
             label = float(splits[2])
             imgA = self.img_processor.process_img(pathA).unsqueeze(0)
             imgB = self.img_processor.process_img(pathB).unsqueeze(0)
-            # If using a quantized model on CPU, force inputs to CPU.
             device_for_inputs = self.device
             if "q" in self.config["edgeface_variant"]:
                 device_for_inputs = torch.device("cpu")
@@ -150,7 +143,7 @@ class FaceModelEvaluator:
                 else:
                     embeddings_tensor = output
             inference_time = time.time() - start_time
-            inference_times.append(inference_time / 2)  # per image
+            inference_times.append(inference_time / 2)
             out_np = embeddings_tensor.cpu().numpy()
             embeddings[2 * idx] = out_np[0]
             embeddings[2 * idx + 1] = out_np[1]
@@ -226,7 +219,6 @@ class FaceModelEvaluator:
         embeddings, issame, avg_inference_time = self.extract_embeddings()
         total_eval_time = time.time() - start_eval
 
-        # If the device is CPU, we skip GPU memory logging.
         if self.device.type == "cuda":
             gpu_memory = torch.cuda.max_memory_allocated(self.device) / (1024 * 1024)
         else:
@@ -247,7 +239,6 @@ class FaceModelEvaluator:
         print(f"Total evaluation time: {total_eval_time:.2f} s")
         print(f"Max GPU memory allocated: {gpu_memory:.2f} MB")
 
-        # Generate confusion matrix image.
         cm_buf = self.plot_confusion_matrix(confusion_matrix(
             np.array(issame, dtype=bool),
             np.sum(np.square(embeddings1 - embeddings2), axis=1) < best_thresh))
@@ -288,7 +279,12 @@ class FaceModelEvaluator:
                       title="ROC Curve (Interactive)")
         wandb.log({"ROC Interactive Plot": fig})
 
-        # Log evaluation metrics table.
+        # Create and set the summary table for ROC Interactive Plot.
+        roc_table = wandb.Table(columns=["FPR", "TPR"])
+        for fp_val, tp_val in zip(avg_fpr, avg_tpr):
+            roc_table.add_data(fp_val, tp_val)
+        wandb.run.summary["ROC Interactive Plot_table"] = roc_table
+
         metrics_table = wandb.Table(columns=["Metric", "Value"])
         metrics_table.add_data("Accuracy Mean", mean_acc)
         metrics_table.add_data("Accuracy Std", std_acc)
@@ -301,9 +297,7 @@ class FaceModelEvaluator:
         return mean_acc, std_acc, best_thresh
 
 if __name__ == "__main__":
-    # Log in to Weights & Biases.
     wandb.login(key=config["wandb_api_key"])
-    # If using a quantized model for EdgeFace, force CPU; otherwise, use available device.
     if "q" in config["edgeface_variant"]:
         device = torch.device("cpu")
     else:
