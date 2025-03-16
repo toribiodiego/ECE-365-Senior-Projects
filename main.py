@@ -22,7 +22,7 @@ import plotly.express as px  # for interactive plotting
 config = {
     "pretrained_path": "resnet18_110.pth",  # Local path to your ResNet weights
     "model_type": "resnet18",               # Options: "resnet18" or "edgeface"
-    "edgeface_variant": "edgeface_xxs_q",   # Not used when model_type is "resnet18"
+    "edgeface_variant": "edgeface_xxs",     # Not used when model_type is "resnet18"
     "use_se": False,                        # Whether to use Squeeze-Excitation blocks (for ResNetFace)
     "grayscale": False,                     # Use color images for ResNetFace. If False, the hubconf will replicate grayscale weights.
     "image_size": 128,                      # Input image size (width, height)
@@ -102,7 +102,7 @@ class ImageProcessor:
         return torch.from_numpy(img).float()
 
 ####################################
-# 4) EVALUATOR CLASS WITH WANDB LOGGING
+# 4) EVALUATOR CLASS (without direct wandb logging)
 ####################################
 class FaceModelEvaluator:
     def __init__(self, model, config, device):
@@ -252,22 +252,18 @@ class FaceModelEvaluator:
             f"Total Evaluation Time (s): {total_eval_time:.2f}\n"
             f"GPU Memory (MB): {gpu_memory:.2f}\n"
         )
-        with open("evaluation_metrics.txt", "w") as f:
-            f.write(metrics_str)
-        wandb.save("evaluation_metrics.txt")
 
-        wandb.run.summary.update({
+        # Build evaluation summary data
+        metrics_summary = {
             "accuracy_mean": mean_acc,
             "accuracy_std": std_acc,
             "best_threshold": best_thresh,
             "avg_inference_time_ms": avg_inference_time * 1000,
             "total_eval_time_s": total_eval_time,
             "gpu_memory_MB": gpu_memory
-        })
+        }
 
-        wandb.log({"confusion_matrix_chart": wandb.Image(cm_img, caption="Confusion Matrix")})
-
-        # Log the ROC curve as an interactive Plotly plot.
+        # Prepare ROC summary table data
         if tpr.ndim == 2:
             avg_tpr = np.mean(tpr, axis=0)
             avg_fpr = np.mean(fpr, axis=0)
@@ -277,13 +273,10 @@ class FaceModelEvaluator:
 
         fig = px.line(x=avg_fpr, y=avg_tpr, labels={'x': 'FPR', 'y': 'TPR'},
                       title="ROC Curve (Interactive)")
-        wandb.log({"ROC Interactive Plot": fig})
 
-        # Create and set the summary table for ROC Interactive Plot.
         roc_table = wandb.Table(columns=["FPR", "TPR"])
         for fp_val, tp_val in zip(avg_fpr, avg_tpr):
             roc_table.add_data(fp_val, tp_val)
-        wandb.run.summary["ROC Interactive Plot_table"] = roc_table
 
         metrics_table = wandb.Table(columns=["Metric", "Value"])
         metrics_table.add_data("Accuracy Mean", mean_acc)
@@ -292,16 +285,46 @@ class FaceModelEvaluator:
         metrics_table.add_data("Avg Inference Time (ms)", avg_inference_time * 1000)
         metrics_table.add_data("Total Evaluation Time (s)", total_eval_time)
         metrics_table.add_data("GPU Memory (MB)", gpu_memory)
-        wandb.log({"Evaluation Metrics Table": metrics_table})
+
+        # Use the WandBLogger to handle all wandb logging
+        WandBLogger.log_evaluation(metrics_str, metrics_summary, cm_img, fig, roc_table, metrics_table)
 
         return mean_acc, std_acc, best_thresh
 
+####################################
+# 5) WEIGHTS & BIASES LOGGER CLASS (ABSTRACTION)
+####################################
+class WandBLogger:
+    @staticmethod
+    def log_evaluation(metrics_str, metrics_summary, cm_img, roc_fig, roc_table, metrics_table):
+        # Save evaluation metrics text file.
+        with open("evaluation_metrics.txt", "w") as f:
+            f.write(metrics_str)
+        wandb.save("evaluation_metrics.txt")
+        
+        # Update run summary with key evaluation metrics.
+        wandb.run.summary.update(metrics_summary)
+        
+        # Log the confusion matrix chart.
+        wandb.log({"confusion_matrix_chart": wandb.Image(cm_img, caption="Confusion Matrix")})
+        
+        # Log the interactive ROC plot.
+        wandb.log({"ROC Interactive Plot": roc_fig})
+        
+        # Set the ROC summary table in the run summary.
+        wandb.run.summary["ROC Interactive Plot_table"] = roc_table
+        
+        # Log the evaluation metrics table.
+        wandb.log({"Evaluation Metrics Table": metrics_table})
+
+####################################
+# MAIN BLOCK
+####################################
 if __name__ == "__main__":
     wandb.login(key=config["wandb_api_key"])
-    if "q" in config["edgeface_variant"]:
-        device = torch.device("cpu")
-    else:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Explicitly set the device to GPU if available.
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("Using device:", device)
 
     wandb.init(project=config["wandb_project"], entity=config["wandb_entity"], config=config, reinit=True)
 
