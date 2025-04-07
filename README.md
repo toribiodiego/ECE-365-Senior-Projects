@@ -3,7 +3,7 @@
 
 ## Senior Projects
 **Course, Fall 2024 & Spring 2025**  
-**Instructor:** Professor Sam Keene
+**Instructor:** Professor Sam Keene   
 **Team Members:** Diego Toribio & Nicholas Storniolo
 
 
