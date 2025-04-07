@@ -9,7 +9,7 @@
 
 ###  Overview
 
-In Senior Projects, groups of students collaborate on a single design project. Throughout the course, students move from conceptual design and budgeting through to testing and performance evaluation, all while being guided by a faculty advisor.
+This course is a year-long, hands-on journey where students work in small groups to tackle real-world challenges in electrical and computer engineering. From project planning and budgeting to designing systems, building hardware and software, and evaluating performance, students cover it all. Along the way, they also sharpen their communication skills through regular presentations and written reports, preparing them for future research or industry roles.
 
 ### Repository Structure
 ```
