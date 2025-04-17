@@ -13,6 +13,14 @@ This course is a year-long, hands-on journey where students work in small groups
 
 ### Repository Structure
 ```
+.
+├── README.md
+├── app.py
+├── hubconf.py
+├── main.py
+├── requirements.txt
+├── run.sh
+└── setup.sh
 ```
 
 
