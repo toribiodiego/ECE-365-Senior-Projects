@@ -4,26 +4,29 @@
 ## Senior Projects
 **Course, Fall 2024 & Spring 2025**  
 **Instructor:** Professor Sam Keene   
-**Team Members:** Diego Toribio & Nicholas Storniolo
 
 
 ###  Overview
 
 This course is a year-long, hands-on journey where students work in small groups to tackle real-world challenges in electrical and computer engineering. From project planning and budgeting to designing systems, building hardware and software, and evaluating performance, students cover it all. Along the way, they also sharpen their communication skills through regular presentations and written reports, preparing them for future research or industry roles.
 
+
 ### Repository Structure
 ```
 .
+├── Final_Project
+│   ├── README.md
+│   ├── app.py
+│   ├── hubconf.py
+│   ├── main.py
+│   ├── requirements.txt
+│   ├── run.sh
+│   └── setup.sh
 ├── README.md
-├── app.py
-├── hubconf.py
-├── main.py
-├── requirements.txt
-├── run.sh
-└── setup.sh
+└── artifacts
 ```
 
-
 ### Final Project
+**Team Members:** Diego Toribio & Nicholas Storniolo
 
-Our project, *Low Powered Face Misclassification: Toward Ethical and Efficient On-Device Facial Recognition*, explores how quantization influences the performance and explainability of face recognition models. We are comparing Convolutional Neural Networks (CNNs) and Vision Transformer (ViT) architectures—both fine-tuned on VGGFace2—for face identification and verification tasks. By testing models at different precision levels (such as FP32, FP16, and INT8) and using explainable AI tools, we aim to reveal how quantization impacts feature extraction and overall performance on low-powered devices, such as the Jetson Nano Super.
+The project, *Low-Powered Face Misclassification: Toward Ethical & Efficient On-Device Facial Recognition*, investigates how post-training and quantization-aware techniques reshape face-ID models for edge hardware. We first fine-tune ResNet-18 and Vision Transformer backbones on the VGGFace2 dataset to establish FP32 baselines for identification and verification accuracy. Next, we sweep FP16 and INT8 variants—leveraging PyTorch + TensorRT—to measure speed-ups, energy draw, and memory savings on a Jetson Nano. Throughout the sweep we generate saliency maps (Grad-CAM for CNNs, attention rollout for ViTs) to see whether quantization alters which facial regions drive decisions and where misclassifications arise. The end deliverable is a compact benchmark suite and set of guidelines that balance privacy, interpretability, and performance for real-time, on-device facial recognition.
