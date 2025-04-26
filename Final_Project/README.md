@@ -20,9 +20,16 @@ Measure how precision reduction influences (1) face-ID accuracy, (2) latency and
 
 
 ### Directory Structure
-
-
-
+```
+.
+├── README.md
+├── app.py
+├── hubconf.py
+├── main.py
+├── requirements.txt
+├── run.sh
+└── setup.sh
+```
 <br>
 
 ### Results
