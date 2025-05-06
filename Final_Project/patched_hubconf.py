@@ -225,4 +225,4 @@ def xxs_q(pretrained=False):
     return model
 
 # Export list of available models
-__all__ = ['base', 's_gamma_05', 'xs_q', 'xs_gamma_06', 'xxs', 'xxs_q'] 
+__all__ = ['base', 's_gamma_05', 'xs_q', 'xs_gamma_06', 'xxs', 'xxs_q', 'resnet18_face'] 

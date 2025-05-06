@@ -19,21 +19,32 @@ import plotly.express as px  # for interactive plotting
 ####################################
 # CONFIGURATION DICTIONARY
 ####################################
+# For EdgeFace, set model_type to "edgeface" and use color images (grayscale=False).
+
+
+model_dict = ['edgeface_base',
+        'edgeface_s_gamma_05',
+        'edgeface_xs_q',
+        'edgeface_xs_gamma_06',
+        'edgeface_xxs',
+        'edgeface_xxs_q'
+]
+
+
 config = {
-    "pretrained_path": "resnet18_110.pth",  # Local path to your ResNet weights
-    "model_type": "resnet18",               # Options: "resnet18" or "edgeface"
-    "edgeface_variant": "edgeface_xxs",     # Not used when model_type is "resnet18"
-    "use_se": False,                        # Whether to use Squeeze-Excitation blocks (for ResNetFace)
-    "grayscale": False,                     # Use color images for ResNetFace. If False, the hubconf will replicate grayscale weights.
+    "pretrained_path": "resnet18_110.pth",  # For ResNetFace. Not used for EdgeFace.
+    "model_type": "edgeface",               # Options: "resnet18" or "edgeface"
+    "edgeface_variant": "edgeface_xxs_q",     # Quantized variant; force CPU if "q" in name
+    "use_se": False,                        # Whether to use Squeeze-Excitation blocks (ResNetFace)
+    "grayscale": False,                     # For EdgeFace, use color images
     "image_size": 128,                      # Input image size (width, height)
     "batch_size": 64,                       # Batch size for evaluation (if needed)
-    "data_root": "align/lfw-align-128",     # Root directory of processed images
-    "pairs_file": "lfw_test_pair.txt",      # File with image pair information
+    "data_root": "align/lfw-align-128",      # Root directory of processed images
+    "pairs_file": "lfw_test_pair.txt",       # File with image pair information
     "embedding_size": 512,                  # Expected embedding dimension from the model
     "nrof_folds": 10,                       # Number of folds for ROC evaluation
     "threshold_range": (0, 3, 0.01),         # (start, stop, step) for threshold sweep
     # WandB configuration
-    "wandb_api_key": "bf8d1a3f64bd6397782ed9ec70231089c9deaefa",
     "wandb_project": "LPFMC",
     "wandb_entity": "Cooper-Union"
 }
@@ -296,7 +307,22 @@ class FaceModelEvaluator:
 ####################################
 class WandBLogger:
     @staticmethod
+    def setup():
+        """Setup the WandB connection using API key from environment variable."""
+        wandb_api_key = os.environ.get("WANDB_API_KEY")
+        if wandb_api_key:
+            wandb.login(key=wandb_api_key)
+        else:
+            print("Warning: WANDB_API_KEY environment variable not set. WandB logging disabled.")
+            return False
+        return True
+        
+    @staticmethod
     def log_evaluation(metrics_str, metrics_summary, cm_img, roc_fig, roc_table, metrics_table):
+        if not os.environ.get("WANDB_API_KEY"):
+            print("WandB logging disabled - no API key found in environment variables.")
+            return
+            
         # Save evaluation metrics text file.
         with open("evaluation_metrics.txt", "w") as f:
             f.write(metrics_str)
@@ -321,7 +347,7 @@ class WandBLogger:
 # MAIN BLOCK
 ####################################
 if __name__ == "__main__":
-    wandb.login(key=config["wandb_api_key"])
+    WandBLogger.setup()
     # Explicitly set the device to GPU if available.
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using device:", device)

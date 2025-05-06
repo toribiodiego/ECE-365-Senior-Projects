@@ -1,0 +1,50 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Embeddings and caches (these can be regenerated)
+embeddings_cache/*
+!embeddings_cache/.gitkeep
+
+# Image files from alignment processing
+aligned_faces/*
+!aligned_faces/.gitkeep
+
+# Model files (can be downloaded with setup script)
+models/*
+!models/.gitkeep
+
+# Notebooks and temporary files
+*.ipynb
+*.ipynb_checkpoints/
+.DS_Store
+*.swp
+*~
+
+# Logs and databases
+*.log
+*.sqlite
+
+# Environment variables
+.env
+
+# Model files (can be downloaded with setup script)
+*.pth
+*.h5
+*.onnx
+
+# Temporary files
+tmp/
+temp/
+.tmp/ 
